@@ -34,8 +34,24 @@ IO_PIN_COMMANDS = (
     "D3", "D4", "D5",
     "P0", "P1", "P2"
 )
+GPIO_DISABLED = "\x00"
+GPIO_STANDARD_FUNC = "\x01"
+GPIO_ADC = "\x02"
+GPIO_DIGITAL_INPUT = "\x03"
+GPIO_DIGITAL_OUTPUT_LOW = "\x04"
+GPIO_DIGITAL_OUTPUT_HIGH = "\x05"
+GPIO_SETTINGS = {
+    "\x00": "DISABLED",
+    "\x01": "STANDARD_FUNC",
+    "\x02": "ADC",
+    "\x03": "DIGITAL_INPUT",
+    "\x04": "DIGITAL_OUTPUT_LOW",
+    "\x05": "DIGITAL_OUTPUT_HIGH"
+}
 
 log = logging.getLogger(__name__)
+log.addHandler(logging.StreamHandler())
+log.setLevel(logging.DEBUG)
 
 # Service to set states on ZigBee modules
 # Service to request state from ZigBee modules
@@ -210,6 +226,23 @@ class ZigBeeHelper(object):
             raise ZigBeePinNotConfigured(
                 "Pin %s (%s) is not configured as an analog input." % (
                     pin_number, IO_PIN_COMMANDS[pin_number]))
+
+    def set_gpio_pin(self, pin_number, setting, dest_addr_long=None):
+        """
+        Set a gpio pin setting.
+        """
+        assert setting in GPIO_SETTINGS
+        print self._send_and_wait(
+            command=IO_PIN_COMMANDS[pin_number], parameter=setting, dest_addr_long=dest_addr_long)
+
+    def get_gpio_pin(self, pin_number, dest_addr_long=None):
+        """
+        Get a gpio pin setting.
+        """
+        frame = self._send_and_wait(
+            command=IO_PIN_COMMANDS[pin_number], dest_addr_long=dest_addr_long)
+        value = frame["parameter"]
+        print GPIO_SETTINGS[value]
 
     def get_voltage(self, dest_addr_long=None):
         return self._send_and_wait(command="%V", dest_addr_long=dest_addr_long)
