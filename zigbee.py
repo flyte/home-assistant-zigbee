@@ -19,6 +19,22 @@ DEFAULT_BAUD = 9600
 
 RX_TIMEOUT = timedelta(seconds=10)
 
+# @TODO: Split these out to a separate module containing the
+#        specifics for each type of XBee module. (This is Series 2 non-pro)
+DIGITAL_PINS = (
+    "dio-0", "dio-1", "dio-2",
+    "dio-3", "dio-4", "dio-5",
+    "dio-10", "dio-11", "dio-12"
+)
+ANALOG_PINS = (
+    "adc-0", "adc-1", "adc-2", "adc-3"
+)
+IO_PIN_COMMANDS = (
+    "D0", "D1", "D2",
+    "D3", "D4", "D5",
+    "P0", "P1", "P2"
+)
+
 log = logging.getLogger(__name__)
 
 # Service to set states on ZigBee modules
@@ -57,6 +73,10 @@ class ZigBeeTxFailure(ZigBeeException):
 
 
 class ZigBeeUnknownStatus(ZigBeeException):
+    pass
+
+
+class ZigBeePinNotConfigured(ZigBeeException):
     pass
 
 
@@ -122,15 +142,21 @@ class ZigBeeHelper(object):
         """
         Put the frame into the _rx_frames dict with a key of the frame_id.
         """
-        self._rx_frames[frame["frame_id"]] = frame
+        try:
+            self._rx_frames[frame["frame_id"]] = frame
+        except KeyError:
+            # Has no frame_id, ignore?
+            pass
         log.debug("Frame received: %s" % frame)
 
     def _send(self, **kwargs):
         """
         Send a frame to either the local ZigBee or a remote device.
         """
-        send_function = self._zb.remote_at if "dest_addr_long" in kwargs else self._zb.at
-        send_function(**kwargs)
+        if kwargs.get("dest_addr_long") is not None:
+            self._zb.remote_at(**kwargs)
+        else:
+            self._zb.at(**kwargs)
 
     def _send_and_wait(self, **kwargs):
         """
@@ -156,12 +182,34 @@ class ZigBeeHelper(object):
         """
         Initiate a sample and return its data.
         """
-        kwargs = dict(dest_addr_long=dest_addr_long) if dest_addr_long is not None else {}
-        frame = self._send_and_wait(command="IS", **kwargs)
+        frame = self._send_and_wait(command="IS", dest_addr_long=dest_addr_long)
         if "parameter" in frame:
             return frame["parameter"][0]  # @TODO: Is there always one value? Is it always a list?
         return {}
 
+    def read_digital_pin(self, pin_number, dest_addr_long=None):
+        """
+        Fetches a sample and returns the boolean value of the requested digital pin.
+        """
+        sample = self.get_sample(dest_addr_long=dest_addr_long)
+        try:
+            return sample[DIGITAL_PINS[pin_number]]
+        except KeyError:
+            raise ZigBeePinNotConfigured(
+                "Pin %s (%s) is not configured as a digital input or output." % (
+                    pin_number, IO_PIN_COMMANDS[pin_number]))
+
+    def read_analog_pin(self, pin_number, dest_addr_long=None):
+        """
+        Fetches a sample and returns the integer value of the requested analog pin.
+        """
+        sample = self.get_sample(dest_addr_long=dest_addr_long)
+        try:
+            return sample[ANALOG_PINS[pin_number]]
+        except KeyError:
+            raise ZigBeePinNotConfigured(
+                "Pin %s (%s) is not configured as an analog input." % (
+                    pin_number, IO_PIN_COMMANDS[pin_number]))
+
     def get_voltage(self, dest_addr_long=None):
-        kwargs = dict(dest_addr_long=dest_addr_long) if dest_addr_long is not None else {}
-        return self._send_and_wait(command="%V", **kwargs)
+        return self._send_and_wait(command="%V", dest_addr_long=dest_addr_long)
