@@ -205,6 +205,13 @@ class ZigBeeHelper(object):
         log.exception("Did not receive response within configured timeout period.")
         raise ZigBeeResponseTimeout()
 
+    def _get_parameter(self, parameter, dest_addr_long=None):
+        """
+        Fetches and returns the value of the specified parameter.
+        """
+        frame = self._send_and_wait(command=parameter, dest_addr_long=dest_addr_long)
+        return frame["parameter"]
+
     def get_sample(self, dest_addr_long=None):
         """
         Initiate a sample and return its data.
@@ -257,5 +264,15 @@ class ZigBeeHelper(object):
         value = frame["parameter"]
         return GPIO_SETTINGS[value]
 
-    def get_voltage(self, dest_addr_long=None):
-        return self._send_and_wait(command="%V", dest_addr_long=dest_addr_long)
+    def get_supply_voltage(self, dest_addr_long=None):
+        """
+        Fetches the value of %V and returns it as volts.
+        """
+        value = self._get_parameter("%V", dest_addr_long=None)
+        return (value * (1200/1024.0)) / 1000
+
+    def get_node_name(self, dest_addr_long=None):
+        """
+        Fetches and returns the value of NI.
+        """
+        return self._get_parameter("NI", dest_addr_long=dest_addr_long)
