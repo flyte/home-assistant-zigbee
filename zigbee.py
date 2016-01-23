@@ -1,6 +1,7 @@
 import logging
 from time import sleep
 from datetime import timedelta, datetime
+from sys import version_info
 
 try:
     from xbee import ZigBee
@@ -30,9 +31,9 @@ ANALOG_PINS = (
     "adc-0", "adc-1", "adc-2", "adc-3"
 )
 IO_PIN_COMMANDS = (
-    "D0", "D1", "D2",
-    "D3", "D4", "D5",
-    "P0", "P1", "P2"
+    b"D0", b"D1", b"D2",
+    b"D3", b"D4", b"D5",
+    b"P0", b"P1", b"P2"
 )
 
 
@@ -45,12 +46,12 @@ class GPIOSetting:
         return self.name
 
 
-GPIO_DISABLED = GPIOSetting("DISABLED", "\x00")
-GPIO_STANDARD_FUNC = GPIOSetting("STANDARD_FUNC", "\x01")
-GPIO_ADC = GPIOSetting("ADC", "\x02")
-GPIO_DIGITAL_INPUT = GPIOSetting("DIGITAL_INPUT", "\x03")
-GPIO_DIGITAL_OUTPUT_LOW = GPIOSetting("DIGITAL_OUTPUT_LOW", "\x04")
-GPIO_DIGITAL_OUTPUT_HIGH = GPIOSetting("DIGITAL_OUTPUT_HIGH", "\x05")
+GPIO_DISABLED = GPIOSetting("DISABLED", b"\x00")
+GPIO_STANDARD_FUNC = GPIOSetting("STANDARD_FUNC", b"\x01")
+GPIO_ADC = GPIOSetting("ADC", b"\x02")
+GPIO_DIGITAL_INPUT = GPIOSetting("DIGITAL_INPUT", b"\x03")
+GPIO_DIGITAL_OUTPUT_LOW = GPIOSetting("DIGITAL_OUTPUT_LOW", b"\x04")
+GPIO_DIGITAL_OUTPUT_HIGH = GPIOSetting("DIGITAL_OUTPUT_HIGH", b"\x05")
 GPIO_SETTINGS = {
     GPIO_DISABLED.value: GPIO_DISABLED,
     GPIO_STANDARD_FUNC.value: GPIO_STANDARD_FUNC,
@@ -125,17 +126,26 @@ def raise_if_error(frame):
     """
     Checks a frame and raises the relevant exception if required.
     """
-    if "status" not in frame or frame["status"] == "\x00":
+    if "status" not in frame or frame["status"] == b"\x00":
         return
     codes_and_exceptions = {
-        "\x01": ZigBeeUnknownError,
-        "\x02": ZigBeeInvalidCommand,
-        "\x03": ZigBeeInvalidParameter,
-        "\x04": ZigBeeTxFailure
+        b"\x01": ZigBeeUnknownError,
+        b"\x02": ZigBeeInvalidCommand,
+        b"\x03": ZigBeeInvalidParameter,
+        b"\x04": ZigBeeTxFailure
     }
     if frame["status"] in codes_and_exceptions:
         raise codes_and_exceptions[frame["status"]]()
     raise ZigBeeUnknownStatus()
+
+
+def hex_to_int(value):
+    """
+    Convert hex string like 0xAE3 to 2787.
+    """
+    if version_info.major >= 3:
+        return int.from_bytes(value, "big")
+    return int(value.encode("hex"), 16)
 
 
 class ZigBeeHelper(object):
@@ -152,10 +162,11 @@ class ZigBeeHelper(object):
     @property
     def next_frame_id(self):
         """
-        Gets a chr() of the next valid frame ID (1 - 255), increments the
+        Gets a byte of the next valid frame ID (1 - 255), increments the
         internal _frame_id counter and wraps it back to 1 if necessary.
         """
-        fid = chr(self._frame_id)
+        # Python 2/3 compatible way of converting 1 to "\x01" in py2 or b"\x01" in py3.
+        fid = bytes(bytearray((self._frame_id,)))
         self._frame_id += 1
         if self._frame_id > 0xFF:
             self._frame_id = 1
@@ -216,7 +227,7 @@ class ZigBeeHelper(object):
         """
         Initiate a sample and return its data.
         """
-        frame = self._send_and_wait(command="IS", dest_addr_long=dest_addr_long)
+        frame = self._send_and_wait(command=b"IS", dest_addr_long=dest_addr_long)
         if "parameter" in frame:
             return frame["parameter"][0]  # @TODO: Is there always one value? Is it always a list?
         return {}
@@ -268,11 +279,11 @@ class ZigBeeHelper(object):
         """
         Fetches the value of %V and returns it as volts.
         """
-        value = self._get_parameter("%V", dest_addr_long=None)
-        return (value * (1200/1024.0)) / 1000
+        value = self._get_parameter(b"%V", dest_addr_long=dest_addr_long)
+        return (hex_to_int(value) * (1200/1024.0)) / 1000
 
     def get_node_name(self, dest_addr_long=None):
         """
         Fetches and returns the value of NI.
         """
-        return self._get_parameter("NI", dest_addr_long=dest_addr_long)
+        return self._get_parameter(b"NI", dest_addr_long=dest_addr_long)
